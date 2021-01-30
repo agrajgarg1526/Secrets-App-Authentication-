@@ -1,8 +1,11 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const ejs = require("ejs");
+require('dotenv').config()
 
 const mongoose = require("mongoose");
+var encrypt = require('mongoose-encryption');
+
 const e = require("express");
 mongoose.connect("mongodb://localhost:27017/secretsDB", {
   useNewUrlParser: true,
@@ -21,7 +24,15 @@ const userSchema = new mongoose.Schema({
   password: String,
 });
 
-const User = mongoose.model("User", userSchema);
+const secret = process.env.SECRET;
+
+userSchema.plugin(encrypt, { 
+  secret: secret, 
+  encryptedFields: ["password"] 
+});
+
+const User =  new mongoose.model("User", userSchema);
+
 
 app.get("/", function (req, res) {
   res.render("home");
