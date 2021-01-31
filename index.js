@@ -2,18 +2,14 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const ejs = require("ejs");
 require("dotenv").config();
-const bcrypt = require("bcrypt");
-const saltRounds = 10;
-const mongoose = require("mongoose");
-
-const e = require("express");
-mongoose.connect("mongodb://localhost:27017/secretsDB", {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-  useFindAndModify: false,
-});
 
 const app = express();
+
+const expressSession = require("express-session")({
+  secret: "asckhnajedbeqkubxniw73fyhkadjs",
+  resave: false,
+  saveUninitialized: false,
+});
 
 app.use(
   bodyParser.urlencoded({
@@ -21,14 +17,54 @@ app.use(
   })
 );
 app.use(express.static("public"));
+app.use(expressSession);
 app.set("view engine", "ejs");
 
+app.listen(3000, function (req, res) {
+  console.log("Server running at 3000");
+});
+
+//////////////////////Passport Setup//////////////////////
+
+const passport = require("passport");
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+//////////////////////////////////////////////////////////
+
+///////////////////////Mongoose Setup/////////////////////
+
+const mongoose = require("mongoose");
+const passportLocalMongoose = require("passport-local-mongoose");
+
+mongoose.connect("mongodb://localhost:27017/secretsDB", {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  useFindAndModify: false,
+  useCreateIndex: true,
+});
+
 const userSchema = new mongoose.Schema({
-  email: String,
+  username: String,
   password: String,
 });
 
+userSchema.plugin(passportLocalMongoose);
 const User = new mongoose.model("User", userSchema);
+
+///////////////////////////////////////////////////////////
+
+////////////////Passport Local Authentication//////////////
+
+passport.use(User.createStrategy());
+
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
+
+///////////////////////////////////////////////////////////
+
+const connectEnsureLogin = require("connect-ensure-login");
 
 app.get("/", function (req, res) {
   res.render("home");
@@ -39,49 +75,52 @@ app.get("/register", function (req, res) {
 });
 
 app.post("/register", function (req, res) {
-  bcrypt.hash(req.body.password, saltRounds, function (err, hash) {
-    const user = new User({
-      email: req.body.email,
-      password: hash,
-    });
-    user.save(function (err) {
+  User.register(
+    { username: req.body.username },
+    req.body.password,
+    function (err, user) {
       if (err) {
         console.log(err);
+        res.redirect("/register");
       } else {
-        res.render("secrets");
+        console.log(user);
+        // passport.authenticate("local")(req,res,function(){
+        //   console.log(req.isAuthenticated());
+        //   res.redirect("/secrets");
+        // });
+
+        req.login(user, function (err) {
+          if (err) {
+            console.log(err);
+          }
+          return res.redirect("/secrets");
+        });
       }
-    });
-  });
+    }
+  );
+});
+
+app.get("/secrets", function (req, res) {
+  if (req.isAuthenticated()) {
+    res.render("secrets");
+  } else {
+    res.redirect("/login");
+  }
 });
 
 app.get("/login", function (req, res) {
   res.render("login");
 });
 
-app.post("/login", function (req, res) {
-  User.findOne({ email: req.body.email }, function (err, foundUser) {
-    if (err) {
-      console.log(err);
-    } else {
-      if (foundUser) {
-        bcrypt.compare( req.body.password,foundUser.password,
-          function (err, result) {
-            if (result === true) {
-              res.render("secrets");
-            }
-            else{
-              res.render("home");
-            }
-          }
-        );
-      }
-      else{
-        res.render("home");
-      }
-    }
-  });
-});
+app.post(
+  "/login",
+  passport.authenticate("local", {
+    successRedirect: "/secrets",
+    failureRedirect: "/login",
+  })
+);
 
-app.listen(3000, function (req, res) {
-  console.log("Server running at 3000");
+app.get('/logout', function(req, res){
+  req.logout();
+  res.redirect('/');
 });
